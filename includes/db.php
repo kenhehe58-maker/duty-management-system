@@ -9,19 +9,24 @@ require_once __DIR__ . '/config.php';
 class DB {
     private static PDO $pdo;
 
-    public static function init(): void {
-        if (isset(self::$pdo)) return;
-        try {
-            $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-            $options = [
-                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES   => false,
-            ];
-            self::$pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
-        } catch (PDOException $e) {
-            die("❌ Lỗi kết nối MySQL: " . $e->getMessage());
+    public static function getRules(): array {
+        self::init();
+        $defaults = [
+            'duty_per_day'   => 1,
+            'max_per_day'    => 5,
+            'allow_override' => true,
+            'rotate_by'      => 'to'
+        ];
+        
+        $stmt = self::$pdo->query("SELECT rule_data FROM rules LIMIT 1");
+        $row = $stmt->fetch();
+        
+        // Trộn dữ liệu từ DB với mảng mặc định để đảm bảo luôn đủ key
+        if ($row) {
+            $saved = json_decode($row['rule_data'], true) ?? [];
+            return array_merge($defaults, $saved);
         }
+        return $defaults;
     }
 
     public static function read(string $table): array { return []; }
