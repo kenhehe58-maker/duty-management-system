@@ -13,7 +13,7 @@
 
 $today = date('Y-m-d');
 $reportDate = $_GET['rdate'] ?? $today;
-$report = DB::getReport($reportDate);
+$report = DB::getReports();
 
 // Danh mục ảnh cần chụp (có hướng dẫn góc chụp chi tiết)
 $photoSpecs = [

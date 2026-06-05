@@ -1,36 +1,25 @@
 <?php
 // ============================================================
-//  includes/db.php
-//  Module: Data Persistence (CHUYỂN TOÀN BỘ SANG MYSQL)
+// includes/db.php - TỐI ƯU HÓA (Đã xóa trùng lặp)
 // ============================================================
-
 require_once __DIR__ . '/config.php';
 
 class DB {
     private static PDO $pdo;
 
-    public static function getRules(): array {
-        self::init();
-        $defaults = [
-            'duty_per_day'   => 1,
-            'max_per_day'    => 5,
-            'allow_override' => true,
-            'rotate_by'      => 'to'
-        ];
-        
-        $stmt = self::$pdo->query("SELECT rule_data FROM rules LIMIT 1");
-        $row = $stmt->fetch();
-        
-        // Trộn dữ liệu từ DB với mảng mặc định để đảm bảo luôn đủ key
-        if ($row) {
-            $saved = json_decode($row['rule_data'], true) ?? [];
-            return array_merge($defaults, $saved);
+    public static function init(): void {
+        if (isset(self::$pdo)) return;
+        try {
+            $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
+            self::$pdo = new PDO($dsn, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (PDOException $e) {
+            die("❌ Lỗi kết nối MySQL: " . $e->getMessage());
         }
-        return $defaults;
     }
-
-    public static function read(string $table): array { return []; }
-    public static function write(string $table, array $data): bool { return true; }
 
     // 1. QUẢN LÝ HỌC SINH
     public static function getStudents(array $filters = []): array {
@@ -79,12 +68,13 @@ class DB {
         return $stmt->execute(['week' => $week, 'data' => $jsonData, 'data2' => $jsonData]);
     }
 
-    // 3. LUẬT PHÂN CÔNG
+    // 3. LUẬT PHÂN CÔNG (Fixed: Đã gộp và xử lý mặc định)
     public static function getRules(): array {
         self::init();
+        $defaults = ['duty_per_day' => 1, 'max_per_day' => 5, 'allow_override' => true, 'rotate_by' => 'to'];
         $stmt = self::$pdo->query("SELECT rule_data FROM rules LIMIT 1");
         $row = $stmt->fetch();
-        return $row ? (json_decode($row['rule_data'], true) ?? []) : [];
+        return $row ? array_merge($defaults, json_decode($row['rule_data'], true) ?? []) : $defaults;
     }
 
     public static function saveRules(array $rules): bool {
@@ -95,27 +85,16 @@ class DB {
     }
 
     // 4. BÁO CÁO HÌNH ẢNH
-    public static function getReports(string $date = ''): array {
+    public static function getReports(): array {
         self::init();
-        if ($date) {
-            $stmt = self::$pdo->prepare("SELECT report_data FROM reports WHERE report_date = :dt");
-            $stmt->execute(['dt' => $date]);
-            $row = $stmt->fetch();
-            return $row ? json_decode($row['report_data'], true) : [];
-        } else {
-            $stmt = self::$pdo->query("SELECT report_date, report_data FROM reports");
-            $all = [];
-            while ($row = $stmt->fetch()) { $all[$row['report_date']] = json_decode($row['report_data'], true); }
-            return $all;
-        }
+        $stmt = self::$pdo->query("SELECT * FROM reports");
+        return $stmt->fetchAll();
     }
 
     public static function saveReport(string $date, array $report): bool {
         self::init();
-        $jsonData = json_encode($report, JSON_UNESCAPED_UNICODE);
         $stmt = self::$pdo->prepare("INSERT INTO reports (report_date, report_data) VALUES (:dt, :data) ON DUPLICATE KEY UPDATE report_data = :data2");
-        return $stmt->execute(['dt' => $date, 'data' => $jsonData, 'data2' => $jsonData]);
+        return $stmt->execute(['dt' => $date, 'data' => json_encode($report, JSON_UNESCAPED_UNICODE), 'data2' => json_encode($report, JSON_UNESCAPED_UNICODE)]);
     }
 }
-
 DB::init();
