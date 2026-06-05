@@ -5,6 +5,12 @@
 //  Phân công: Dev A
 // ============================================================
 
+// --- BỔ SUNG CẤU HÌNH KẾT NỐI MYSQL DATABASE (ĐỂ HẾT LỖI GÂY TRẮNG TRANG) ---
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'quanly_trucnhat');
+define('DB_USER', 'root');
+define('DB_PASS', ''); // XAMPP mặc định để trống mật khẩu
+
 // --- Cấu hình lớp học ---
 define('CLASS_NAME',    'Lớp 10A1');
 define('SCHOOL_YEAR',   '2024–2025');
