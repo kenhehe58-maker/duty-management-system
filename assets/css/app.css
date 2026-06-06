@@ -438,3 +438,10 @@ a{text-decoration:none;color:inherit}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--wood-bg)}
 ::-webkit-scrollbar-thumb{background:var(--wood);border-radius:3px}
+
+/* ── Safari & cross-browser fixes ────────────────────────── */
+* { -webkit-user-select: none; user-select: none; }
+input, textarea, select, .field-input, .field-select, [contenteditable] {
+  -webkit-user-select: text; user-select: text;
+}
+.student-chip, .duty-person { -webkit-user-select: none; }
