@@ -15,14 +15,43 @@ function findStudentA(array $arr,int $row,string $pos):?array {
     foreach($arr as $s){if($s['hang']==$row&&strtoupper($s['vi_tri']??'')===$pos)return $s;}
     return null;
 }
-function renderChip(array $s,array $c):string {
-    $init=getInitials($s['name']);
-    $name=htmlspecialchars($s['name'],ENT_QUOTES);
-    $role=!empty($s['chuc_vu'])?"<span class=\"chip-role\">".htmlspecialchars($s['chuc_vu'])."</span>":'';
+
+/**
+ * Hàm lấy Tên chính (Tên cuối) + Tên đệm nếu lớp bị trùng tên cuối
+ */
+function getSmartNameAssign(array $st, array $allStudents): string {
+    $parts = explode(' ', trim($st['name']));
+    $mainName = end($parts); 
+
+    $dupCount = 0;
+    foreach ($allStudents as $s) {
+        $p = explode(' ', trim($s['name']));
+        if (end($p) === $mainName) {
+            $dupCount++;
+        }
+    }
+
+    if ($dupCount > 1 && count($parts) > 1) {
+        $middleName = $parts[count($parts) - 2];
+        return $middleName . ' ' . $mainName;
+    }
+    return $mainName;
+}
+
+function renderChip(array $s, array $c, array $allStudents, int $stt = 0): string {
+    $displayName = getSmartNameAssign($s, $allStudents);
+    $name = htmlspecialchars($s['name'], ENT_QUOTES);
+    $role = !empty($s['chuc_vu']) ? "<span class=\"chip-role\">" . htmlspecialchars($s['chuc_vu']) . "</span>" : '';
+    
+    // Thêm số thứ tự vào đây
+    $sttLabel = $stt > 0 ? "<span class=\"chip-stt\" style=\"margin-right:5px; font-weight:bold; color:#777;\">{$stt}.</span>" : "";
+
     return "<div class=\"student-chip\" draggable=\"true\" data-sid=\"{$s['id']}\""
       ." ondragstart=\"event.dataTransfer.setData('sid','{$s['id']}')\" onclick=\"openEditStudent({$s['id']})\">"
-      ."<div class=\"avatar-sm\" style=\"background:{$c['bg']};color:{$c['text']}\">{$init}</div>"
-      ."<div class=\"chip-info\"><span class=\"chip-name\">{$name}</span><span class=\"chip-meta\">Tổ {$s['to']} · H{$s['hang']}{$s['vi_tri']}</span>{$role}</div>"
+      ."<div class=\"avatar-sm\" style=\"background:{$c['bg']};color:{$c['text']}\">" . htmlspecialchars($displayName) . "</div>"
+      ."<div class=\"chip-info\">"
+      ."<span class=\"chip-name\">{$sttLabel}{$name}</span>"
+      ."<span class=\"chip-meta\">Tổ {$s['to']} · H{$s['hang']}{$s['vi_tri']}</span>{$role}</div>"
       ."<span class=\"drag-handle\" aria-hidden=\"true\">⠿</span>"
       ."</div>";
 }
@@ -38,13 +67,17 @@ function renderChip(array $s,array $c):string {
     </select>
     <input type="text" id="searchName" class="field-input-sm" placeholder="Tìm tên..."
            title="Tìm kiếm học sinh" aria-label="Tìm kiếm học sinh" oninput="searchStudents(this.value)"/>
+    
+    <button class="btn-danger" onclick="resetAllDesks()" style="background: #c0392b; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+      🗑️ Xóa sạch sơ đồ
+    </button>
+
     <button class="btn-primary" onclick="openAddStudentModal()" aria-label="Thêm học sinh mới">
       👤 Thêm học sinh
     </button>
   </div>
 </div>
 
-<!-- Stats -->
 <div class="stats-row">
   <div class="stat-card"><span class="stat-val"><?=count($students)?></span><span class="stat-label">Tổng học sinh</span></div>
   <?php foreach($byTo as $t=>$arr): $c=$toColors[$t]; ?>
@@ -56,7 +89,6 @@ function renderChip(array $s,array $c):string {
   <div class="stat-card stat-warn"><span class="stat-val"><?=count($unassigned)?></span><span class="stat-label">Chưa có chỗ</span></div>
 </div>
 
-<!-- Lưới theo tổ -->
 <div id="assignGrid">
   <?php foreach($byTo as $t=>$arr):
     $c=$toColors[$t];
@@ -69,33 +101,49 @@ function renderChip(array $s,array $c):string {
       <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="autoAssignTo(<?=$t?>)"
               aria-label="Tự động xếp chỗ Tổ <?=$t?>">⚡ Tự động xếp</button>
     </div>
-    <div class="seat-grid">
-      <div class="seat-grid-header"><span>Hàng</span><span>Chỗ Trái (T)</span><span>Chỗ Phải (P)</span></div>
-      <?php for($row=1;$row<=NUM_ROWS;$row++):
-        $stT=findStudentA($arr,$row,'T');
-        $stP=findStudentA($arr,$row,'P');
+<div class="seat-grid">
+  <div class="seat-grid-header"><span>Hàng</span><span>Chỗ Trái (T)</span><span>Chỗ Phải (P)</span></div>
+  <?php for($row=1;$row<=NUM_ROWS;$row++):
+    $stT = findStudentA($arr,$row,'T');
+    $stP = findStudentA($arr,$row,'P');
+  ?>
+  <div class="seat-row" data-to="<?=$t?>" data-row="<?=$row?>">
+    <div class="seat-row-label">H<?=$row?></div>
+    
+    <div class="seat-cell" ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropToSeat(event,<?=$t?>,<?=$row?>,'T')">
+      <?php 
+        if($stT) {
+            // Tìm STT của học sinh này trong danh sách toàn lớp
+            $stt = array_search($stT['id'], array_column($students, 'id')) + 1;
+            echo renderChip($stT, $c, $students, $stt);
+        } else {
+            echo '<div class="seat-empty">Kéo vào đây</div>';
+        }
       ?>
-      <div class="seat-row" data-to="<?=$t?>" data-row="<?=$row?>">
-        <div class="seat-row-label">H<?=$row?></div>
-        <div class="seat-cell" ondragover="event.preventDefault();this.classList.add('drag-over')"
-             ondragleave="this.classList.remove('drag-over')"
-             ondrop="dropToSeat(event,<?=$t?>,<?=$row?>,'T')">
-          <?=$stT?renderChip($stT,$c):'<div class="seat-empty">Kéo vào đây</div>'?>
-        </div>
-        <div class="seat-cell" ondragover="event.preventDefault();this.classList.add('drag-over')"
-             ondragleave="this.classList.remove('drag-over')"
-             ondrop="dropToSeat(event,<?=$t?>,<?=$row?>,'P')">
-          <?=$stP?renderChip($stP,$c):'<div class="seat-empty">Kéo vào đây</div>'?>
-        </div>
-      </div>
-      <?php endfor; ?>
+    </div>
+
+    <div class="seat-cell" ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropToSeat(event,<?=$t?>,<?=$row?>,'P')">
+      <?php 
+        if($stP) {
+            // Tìm STT của học sinh này trong danh sách toàn lớp
+            $stt = array_search($stP['id'], array_column($students, 'id')) + 1;
+            echo renderChip($stP, $c, $students, $stt);
+        } else {
+            echo '<div class="seat-empty">Kéo vào đây</div>';
+        }
+      ?>
     </div>
   </div>
+  <?php endfor; ?>
+</div>
   <?php endforeach; ?>
 
-  <!-- Chưa có chỗ -->
   <?php if(!empty($unassigned)): ?>
-  <div class="to-section">
+  <div class="to-section" data-to="unassigned">
     <div class="to-section-header" style="background:#FEF3C7;border-left:4px solid #D97706">
       <span style="color:#92400E;font-weight:700">⚠️ Chưa có chỗ ngồi</span>
       <span class="muted"><?=count($unassigned)?> học sinh</span>
@@ -103,7 +151,7 @@ function renderChip(array $s,array $c):string {
     <div class="unassigned-list">
       <?php foreach($unassigned as $s):
         $c2=$toColors[$s['to']??1]??$toColors[1];
-        echo renderChip($s,$c2);
+        echo renderChip($s,$c2,$students);
       endforeach; ?>
     </div>
   </div>
@@ -111,7 +159,6 @@ function renderChip(array $s,array $c):string {
 </div>
 </div>
 
-<!-- Modal thêm/sửa học sinh -->
 <div id="addStudentModal" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="addStudentTitle">
   <div class="popup-box">
     <div class="popup-header">
@@ -157,15 +204,73 @@ function renderChip(array $s,array $c):string {
 </div>
 
 <script>
+const _allStudents = <?=json_encode($students, JSON_UNESCAPED_UNICODE)?>;
+
+// Đọc lại bộ lọc cũ từ URL khi load lại trang nhằm ngăn việc tự bung bét các tổ khác
+document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const savedTo = urlParams.get('filter_to');
+    if (savedTo) {
+        document.getElementById('filterTo').value = savedTo;
+        filterByTo(savedTo);
+    }
+});
+
 function dropToSeat(e,to,row,pos){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
+  
+  // FIX CHẶN ĐÈ: Nếu ô đích đã có học sinh ngồi (có class .student-chip), không cho thả vào
+  if (e.currentTarget.querySelector('.student-chip')) {
+      App.toast('Chỗ này đã có học sinh ngồi rồi!', 'warning');
+      return;
+  }
+
   const sid=e.dataTransfer.getData('sid');
   if(!sid) return;
+  
   App.assignDesk(+sid,to,row,pos).then(r=>{
-    if(r.ok!==false) location.reload();
-    else App.toast('Lỗi gán chỗ: '+(r.error||'?'),'error');
+    if(r.ok!==false) {
+        // FIX GIỮ BỘ LỌC: Thêm tham số lọc vào URL trước khi reload để cố định trạng thái tổ
+        const currentFilter = document.getElementById('filterTo').value;
+        if (currentFilter) {
+            window.location.href = window.location.pathname + '?tab=assign&filter_to=' + currentFilter;
+        } else {
+            location.reload();
+        }
+    } else {
+        App.toast('Lỗi gán chỗ: '+(r.error||'?'),'error');
+    }
   });
+}
+
+// HÀM RESET DỌN TRỐNG TOÀN BỘ SƠ ĐỒ MÀ ÔNG CẦN ĐÂY:
+async function resetAllDesks() {
+    if (!confirm('Bạn có chắc chắn muốn XÓA SẠCH toàn bộ vị trí chỗ ngồi để xếp lại từ đầu?')) return;
+    
+    App.toast('Đang dọn trống sơ đồ...', 'info');
+    const occupied = _allStudents.filter(s => +s.hang > 0);
+    
+    if (occupied.length === 0) {
+        App.toast('Sơ đồ lớp học hiện tại đã trống sẵn rồi!', 'info');
+        return;
+    }
+
+    try {
+        for (let s of occupied) {
+            await App.assignDesk(s.id, s.to, 0, ''); 
+        }
+        App.toast('Đã làm trống toàn bộ sơ đồ! ✓', 'success');
+        
+        const currentFilter = document.getElementById('filterTo').value;
+        if (currentFilter) {
+            window.location.href = window.location.pathname + '?tab=assign&filter_to=' + currentFilter;
+        } else {
+            location.reload();
+        }
+    } catch(err) {
+        App.toast('Lỗi khi xóa sơ đồ', 'error');
+    }
 }
 
 function openAddStudentModal(){
@@ -178,8 +283,6 @@ function openAddStudentModal(){
   document.getElementById('deleteStudentBtn').style.display='none';
   openModal('addStudentModal');
 }
-
-// openEditStudent defined in app.js — uses App.getStudents()
 
 function doSaveStudent(){
   const id=document.getElementById('editStudentId').value;
@@ -194,7 +297,15 @@ function doSaveStudent(){
   if(!data.name){App.toast('Vui lòng nhập họ tên','error');return;}
   App.saveStudent(data).then(r=>{
     closeModal('addStudentModal');
-    if(r.ok!==false){App.toast('Đã lưu học sinh ✓');location.reload();}
+    if(r.ok!==false){
+        App.toast('Đã lưu học sinh ✓');
+        const currentFilter = document.getElementById('filterTo').value;
+        if (currentFilter) {
+            window.location.href = window.location.pathname + '?tab=assign&filter_to=' + currentFilter;
+        } else {
+            location.reload();
+        }
+    }
     else App.toast('Lỗi lưu: '+(r.error||'?'),'error');
   });
 }
@@ -212,7 +323,10 @@ function doDeleteStudent(){
 function autoAssignTo(to){
   if(!confirm('Tự động xếp chỗ ngồi Tổ '+to+'?\nDữ liệu chỗ ngồi cũ của tổ này sẽ bị thay thế.')) return;
   App.autoAssignTo(to).then(r=>{
-    if(r.ok!==false){App.toast('Đã xếp chỗ '+r.count+' học sinh ✓');location.reload();}
+    if(r.ok!==false){
+        App.toast('Đã xếp chỗ '+r.count+' học sinh ✓');
+        window.location.href = window.location.pathname + '?tab=assign&filter_to=' + to;
+    }
     else App.toast('Lỗi: '+(r.error||'?'),'error');
   });
 }

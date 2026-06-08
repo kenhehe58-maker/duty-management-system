@@ -504,3 +504,15 @@ a{text-decoration:none;color:inherit}
     font-size: 12px;
   }
 }
+/* Tùy chỉnh hiển thị Số thứ tự trên thẻ học sinh */
+.chip-name .chip-stt {
+    display: inline-block;
+    min-width: 22px;       /* Đảm bảo các số 1, 10, 20 thẳng hàng */
+    font-size: 0.85em;
+    color: #888;
+    font-weight: 700;
+}
+.student-chip {
+    display: flex;
+    align-items: center;
+}
