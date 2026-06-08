@@ -1,6 +1,6 @@
 /* ============================================================
-   app.css  —  Chủ đề lớp học: gỗ + bảng xanh  v2.8 (Full Fixed)
-   HOÀN CHỈNH: SỬA LỖI TRÀN VIỀN SƠ ĐỒ & BẢNG XANH HỌC ĐƯỜNG
+   app.css  —  Chủ đề lớp học: gỗ + bảng xanh  v3.0 (Chính thức)
+   HOÀN CHỈNH: ĐÃ TÍCH HỢP ĐỦ KHU VỰC IMPORT EXCEL & NÚT BÁO CÁO ẢNH
    ============================================================ */
 :root {
   --wood:        #C8A96E;
@@ -233,7 +233,6 @@ a{text-decoration:none;color:inherit}
   text-shadow: 0 1px 4px rgba(0,0,0,.6);
 }
 
-/* Thành phần Slogan mới thêm vào dưới Bảng đen */
 .podium-slogan {
   font-family: 'Courier New', Courier, monospace;
   font-size: 0.85rem;
@@ -267,7 +266,6 @@ a{text-decoration:none;color:inherit}
 .diagram-left{flex:1;min-width:0}
 .diagram-right{width:148px;flex-shrink:0}
 
-/* NÂNG CẤP LƯỚI GRID ĐỒNG BỘ: Giúp sơ đồ co giãn hoàn hảo theo màn hình */
 .desk-header-row{
   display: grid;
   grid-template-columns: 22px 1fr 1fr minmax(11px, 1.2fr) 1fr 1fr minmax(11px, 1.2fr) 1fr 1fr minmax(11px, 1.2fr) 1fr 1fr;
@@ -277,7 +275,6 @@ a{text-decoration:none;color:inherit}
   width: 100%;
 }
 
-/* FIX: Tắt hẳn phần tử giả để triệt tiêu lỗi tạo khoảng trống đúp cột */
 .desk-header-row::before {
   display: none !important;
 }
@@ -320,7 +317,6 @@ a{text-decoration:none;color:inherit}
 }
 .desk:hover{transform:scale(1.22) translateY(-2px);box-shadow:var(--sh-md);z-index:5}
 
-/* FIX OUTLINE: Rút về 2px giúp 2 ô dính trực nhật đứng cạnh nhau KHÔNG bị giao nhau */
 .desk.desk-duty{outline:2px solid #E74C3C;outline-offset:1px;box-shadow:0 0 0 3px rgba(231,76,60,.15),0 2px 0 rgba(0,0,0,.12)}
 .desk.drag-over{outline:2px dashed var(--ocean);outline-offset:2px;background:var(--ocean-pale)!important}
 .desk-tip{display:none;position:absolute;bottom:110%;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:3px 7px;border-radius:4px;font-size:10px;white-space:nowrap;z-index:10;pointer-events:none}
@@ -400,11 +396,40 @@ a{text-decoration:none;color:inherit}
 .btn-danger-sm:disabled{opacity:.4;cursor:not-allowed}
 
 /* ===========================================================
-   MODULE: REPORT
+   MODULE: IMPORT (BỔ SUNG VÙNG KÉO THẢ ĐỂ HOÀN THIỆN ĐỦ FILE)
+   =========================================================== */
+.upload-area {
+  border: 2px dashed var(--border);
+  background: var(--bg-card);
+  border-radius: var(--r-lg);
+  padding: 32px 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px 0;
+  box-shadow: var(--sh-sm);
+}
+.upload-area:hover, .upload-area.drag-over {
+  border-color: var(--ocean);
+  background: var(--ocean-pale);
+  transform: translateY(-1px);
+  box-shadow: var(--sh-md);
+}
+.upload-icon { font-size: 32px; display: block; }
+.upload-text { font-size: 13px; font-weight: 700; color: var(--text); }
+.upload-hint { font-size: 11px; color: var(--text-muted); }
+
+/* ===========================================================
+   MODULE: REPORT (SỬA LỖI NÚT BẤM VÀ THÊM HITBOX TRÊN DI ĐỘNG)
    =========================================================== */
 .date-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .photo-checklist{display:flex;flex-direction:column;gap:10px}
-.photo-item{background:var(--bg-card);border:1.5px solid var(--border-lt);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-sm);transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+.photo-item{background:var(--bg-card);border:1px solid var(--border-lt);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--sh-sm);transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
 .photo-item:not(.done):hover{border-color:var(--amber);box-shadow:var(--sh-md)}
 .photo-item.done{border-color:var(--green)}
 .photo-item-header{display:flex;gap:10px;padding:12px 14px;align-items:flex-start}
@@ -418,10 +443,64 @@ a{text-decoration:none;color:inherit}
 .guide-text{font-size:11px;color:var(--text-sub);line-height:1.5}
 .guide-example{font-size:10px;color:var(--board);display:flex;gap:4px;align-items:flex-start}
 
-/* FIX: Vá đóng ngoặc cú pháp dứt điểm cho class cuối cùng */
-.photo-item-actions{
-  display:flex;
-  flex-direction:column;
-  align-items:flex-end;
-  gap:5px;
+.photo-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* Định hình các tag label/button trong khu vực chụp ảnh thành các block nút gỗ sang xịn mịn */
+.photo-item-actions button,
+.photo-item-actions label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 12px;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+  box-shadow: var(--sh-sm);
+  white-space: nowrap;
+}
+
+.photo-item-actions button:hover,
+.photo-item-actions label:hover {
+  background: var(--bg-hover);
+  border-color: var(--wood);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+/* ── TỐI ƯU TUYỆT ĐỐI CHO ĐIỆN THOẠI ── */
+@media (max-width: 576px) {
+  .photo-item-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .photo-item-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    margin-left: 0;
+    margin-top: 4px;
+    width: 100%;
+    border-top: 1px dashed var(--border-lt);
+    padding-top: 8px;
+  }
+  .photo-item-actions button,
+  .photo-item-actions label {
+    flex: 1; /* Các nút dàn đều 50-50 cực rộng, ngón tay dễ ấn */
+    padding: 9px 10px;
+    font-size: 12px;
+  }
 }
