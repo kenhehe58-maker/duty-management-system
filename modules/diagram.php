@@ -1,20 +1,20 @@
 <?php
-// modules/diagram.php — Sơ đồ lớp (v2.1 fixed)
-$students  = DB::getStudents();
-$toColors  = json_decode(TO_COLORS, true);
-$sched     = DB::getSchedule((int)date('W'));
-$dow       = max(0, (int)date('N') - 1);
+// modules/diagram.php — Sơ đồ lớp (v2.2 Fixed Grid & Slogan)
+$students   = DB::getStudents();
+$toColors   = json_decode(TO_COLORS, true);
+$sched      = DB::getSchedule((int)date('W'));
+$dow        = max(0, (int)date('N') - 1);
 $dutyToday = $sched[$dow] ?? [];
 
 function findStudent(array $a, int $to, int $row, string $pos): ?array {
     foreach ($a as $s) {
-        if ($s['to']==$to && $s['hang']==$row && strtoupper($s['vi_tri']===$pos?$s['vi_tri']:'')===$pos) return $s;
+        if ($s['to'] == $to && $s['hang'] == $row && strtoupper($s['vi_tri'] === $pos ? $s['vi_tri'] : '') === $pos) return $s;
     }
     return null;
 }
 function isDutySlot(array $duty, int $to, int $row): bool {
     if (empty($duty['to'])) return false;
-    return $duty['to']==$to && $row<=2;
+    return $duty['to'] == $to && $row <= 2;
 }
 function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $duty): string {
     $id   = "desk-t{$to}-r{$row}-{$pos}";
@@ -42,40 +42,37 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
         <?=$c['label']?>
       </span>
     <?php endforeach; ?>
-    <!-- FIX: legend đang trực dùng border thay vì fill để không nhầm với Tổ 4 -->
     <span class="legend-chip legend-duty">Đang trực hôm nay</span>
   </div>
 </div>
 
 <div class="diagram-wrap">
 
-  <!-- LEFT: bảng + bục giảng + bàn GV + 4 tổ -->
   <div class="diagram-left">
-    <div class="blackboard">✏️ BẢNG ĐEN</div>
+    
+    <div class="blackboard">
+        <div>✏️ BẢNG ĐEN LỚP HỌC</div>
+        <div class="podium-slogan">"Tiên Học Lễ - Hậu Học Văn"</div>
+    </div>
 
-    <!-- FIX: Bục giảng BÊN TRÁI, Bàn GV BÊN PHẢI (nhìn từ bảng xuống) -->
     <div class="podium-row">
-      <div class="podium-box">
-        <span class="podium-label">🎤 Bục giảng</span>
-        <span class="podium-note">Đứng từ hành lang nhìn vào,<br>lấy hết bục + tường bảng trong 1 khung</span>
-      </div>
       <div class="teacher-box">
         <span>🪑 Bàn giáo viên</span>
         <small>Góc trái · cùng tường với bảng</small>
-        <small style="color:var(--ocean);font-size:9px">📷 Chụp từ hành lang nhìn vào</small>
+      </div>
+      <div class="podium-box">
+        <span class="podium-label">🎤 Bục giảng</span>
       </div>
     </div>
 
-    <!-- Column headers — FIX: Tổ 1 bên trái nhất (phía hành lang) -->
     <div class="desk-header-row">
-      <div style="width:22px"></div>
-      <?php for($to=1;$to<=NUM_TO;$to++): $c=$toColors[$to]; ?>
+      <div style="width:22px; flex-shrink:0;"></div> <?php for($to=NUM_TO;$to>=1;$to--): $c=$toColors[$to]; ?>
         <div class="to-header" style="color:<?=$c['text']?>">
           <span><?=$c['label']?></span>
           <small>T / P</small>
         </div>
-        <?php if($to<NUM_TO): ?>
-          <div class="path-spacer-header"><?=$to?></div>
+        <?php if($to>1): ?>
+          <div class="path-spacer-header"><?=$to-1?></div>
         <?php endif; ?>
       <?php endfor; ?>
     </div>
@@ -84,7 +81,7 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
       <?php for($row=1;$row<=NUM_ROWS;$row++): ?>
         <div class="desk-row" data-row="<?=$row?>">
           <div class="row-num">H<?=$row?></div>
-          <?php for($to=1;$to<=NUM_TO;$to++):
+          <?php for($to=NUM_TO;$to>=1;$to--):
             $c=$toColors[$to];
             $stT=findStudent($students,$to,$row,'T');
             $stP=findStudent($students,$to,$row,'P');
@@ -92,8 +89,8 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
           ?>
             <?=renderDesk($stT,$to,$row,'T',$c,$isDuty)?>
             <?=renderDesk($stP,$to,$row,'P',$c,$isDuty)?>
-            <?php if($to<NUM_TO): ?>
-              <div class="path-line path-<?=$to?>" aria-label="Đường đi <?=$to?>"></div>
+            <?php if($to>1): ?>
+              <div class="path-line path-<?=$to-1?>" aria-label="Đường đi <?=$to-1?>"></div>
             <?php endif; ?>
           <?php endfor; ?>
         </div>
@@ -108,27 +105,9 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
     </div>
   </div>
 
-  <!-- RIGHT: 6 dãy bàn (từ hành lang nhìn vào) -->
-  <div class="diagram-right">
-    <div class="side-title">🚪 Bên phải (từ hành lang)</div>
-    <p class="side-subtitle">6 dãy · chụp xuyên qua hộp bàn</p>
-    <?php for($dy=1;$dy<=NUM_SIDE_ROWS;$dy++): ?>
-      <div class="side-row-group">
-        <span class="side-row-label">Dãy <?=$dy?></span>
-        <div class="side-desk" title="Dãy <?=$dy?> Trái" aria-label="Dãy <?=$dy?> Trái">D<?=$dy?>T</div>
-        <div class="side-desk" title="Dãy <?=$dy?> Phải" aria-label="Dãy <?=$dy?> Phải">D<?=$dy?>P</div>
-        <div class="shoot-arrow" aria-hidden="true">→</div>
-      </div>
-    <?php endfor; ?>
-    <div class="side-note">
-      📷 <span>Chụp từ đầu dãy → cuối dãy, góc thấp xuyên qua hộp bàn để kiểm tra bên trong</span>
-    </div>
-  </div>
-
 </div>
 </div>
 
-<!-- Popup gán chỗ ngồi -->
 <div id="deskPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="popupTitle">
   <div class="popup-box">
     <div class="popup-header">
@@ -146,7 +125,7 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
 <script>
 const _allStudents = <?=json_encode($students, JSON_UNESCAPED_UNICODE)?>;
 
-// Drag & drop
+// Drag & drop logic giữ nguyên phục vụ tương tác
 document.querySelectorAll('.desk').forEach(el => {
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('sid', el.dataset.sid);

@@ -108,7 +108,6 @@ $pct = $total>0 ? round($done/$total*100) : 0;
         <div class="photo-guide">
           <div class="guide-angle">📷 Góc chụp: <?=$spec['angle']?></div>
           <div class="guide-text"><?=$spec['guide']?></div>
-          <div class="guide-example">✅ <?=$spec['example']?></div>
         </div>
       </div>
       <div class="photo-item-actions">

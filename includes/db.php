@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-//  includes/db.php — MySQL PDO layer (hoàn chỉnh)
+//   includes/db.php — MySQL PDO layer (Đã fix lỗi NOT NULL khi Import)
 // ============================================================
 require_once __DIR__ . '/config.php';
 
@@ -47,6 +47,13 @@ class DB {
 
     public static function upsertStudent(array $s): int {
         self::init();
+        
+        // Xử lý chống lỗi NOT NULL từ MySQL: Nếu trống thì gán giá trị an toàn
+        $hang = (isset($s['hang']) && $s['hang'] !== null && $s['hang'] !== '') ? (int)$s['hang'] : 0;
+        $vi_tri = (isset($s['vi_tri']) && $s['vi_tri'] !== null) ? trim($s['vi_tri']) : '';
+        $ban = isset($s['ban']) ? $s['ban'] : null;
+        $chuc_vu = isset($s['chuc_vu']) ? trim($s['chuc_vu']) : '';
+
         if (!empty($s['id'])) {
             $st = self::$pdo->prepare(
                 "INSERT INTO students (id,name,`to`,hang,vi_tri,ban,chuc_vu)
@@ -54,15 +61,28 @@ class DB {
                  ON DUPLICATE KEY UPDATE name=VALUES(name),`to`=VALUES(`to`),
                  hang=VALUES(hang),vi_tri=VALUES(vi_tri),ban=VALUES(ban),chuc_vu=VALUES(chuc_vu)"
             );
-            $st->execute(['id'=>$s['id'],'n'=>$s['name'],'t'=>$s['to'],
-                'h'=>$s['hang']??null,'v'=>$s['vi_tri']??null,'b'=>$s['ban']??null,'c'=>$s['chuc_vu']??null]);
+            $st->execute([
+                'id' => $s['id'],
+                'n'  => $s['name'],
+                't'  => $s['to'],
+                'h'  => $hang,
+                'v'  => $vi_tri,
+                'b'  => $ban,
+                'c'  => $chuc_vu
+            ]);
             return (int)$s['id'];
         } else {
             $st = self::$pdo->prepare(
                 "INSERT INTO students (name,`to`,hang,vi_tri,ban,chuc_vu) VALUES (:n,:t,:h,:v,:b,:c)"
             );
-            $st->execute(['n'=>$s['name'],'t'=>$s['to'],
-                'h'=>$s['hang']??null,'v'=>$s['vi_tri']??null,'b'=>$s['ban']??null,'c'=>$s['chuc_vu']??null]);
+            $st->execute([
+                'n'  => $s['name'],
+                't'  => $s['to'],
+                'h'  => $hang,
+                'v'  => $vi_tri,
+                'b'  => $ban,
+                'c'  => $chuc_vu
+            ]);
             return (int)self::$pdo->lastInsertId();
         }
     }
