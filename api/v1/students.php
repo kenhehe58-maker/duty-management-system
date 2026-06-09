@@ -56,16 +56,24 @@ switch ($action) {
     case 'assign':
         $sid    = (int)($body['sid']    ?? 0);
         $to     = (int)($body['to']     ?? 0);
-        $hang   = (int)($body['hang']   ?? 0);
-        $vi_tri = strtoupper(substr($body['vi_tri'] ?? 'T', 0, 1));
-        if (!$sid || !$to || !$hang) jsonOut(['ok'=>false,'error'=>'Thiếu thông tin'], 422);
+        $hang   = (int)($body['hang']   ?? 0);   // 0 = reset chỗ ngồi
+        $vi_tri = strtoupper(substr($body['vi_tri'] ?? '', 0, 1)); // '' khi reset
+        // FIX: bỏ !$hang — hang=0 hợp lệ khi dùng resetAllDesks()
+        if (!$sid || !$to) jsonOut(['ok'=>false,'error'=>'Thiếu thông tin'], 422);
         DB::assignDesk($sid, $to, $hang, $vi_tri);
         jsonOut(['ok'=>true]);
-        break; // FIX: Thêm break
+        break;
 
     case 'auto_assign':
         $to       = (int)($body['to'] ?? 1);
-        $students = DB::getStudents(['to'=>$to]);
+        // Lấy toàn bộ rồi filter theo tổ (phòng trường hợp DB::getStudents không hỗ trợ filter)
+        $allSt    = DB::getStudents();
+        $students = array_values(array_filter($allSt, fn($s) => (int)($s['to'] ?? 0) === $to));
+        // Xóa chỗ cũ của tổ này trước (tránh trùng chỗ)
+        foreach ($students as $s) {
+            DB::assignDesk((int)$s['id'], $to, 0, '');
+        }
+        // Xếp lại từ đầu: T rồi P, từng hàng
         $i = 0;
         foreach ($students as $s) {
             $hang   = (int)floor($i / 2) + 1;
@@ -74,7 +82,7 @@ switch ($action) {
             $i++;
         }
         jsonOut(['ok'=>true, 'count'=>count($students)]);
-        break; // FIX: Thêm break
+        break;
 
     case 'import':
         $rows = $body['students'] ?? [];

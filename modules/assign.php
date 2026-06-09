@@ -92,7 +92,6 @@ function renderChip(array $s, array $c, array $allStudents, int $stt = 0): strin
 <div id="assignGrid">
   <?php foreach($byTo as $t=>$arr):
     $c=$toColors[$t];
-    if(empty($arr)) continue;
   ?>
   <div class="to-section" data-to="<?=$t?>">
     <div class="to-section-header" style="background:<?=$c['bg']?>;border-left:4px solid <?=$c['border']?>">
@@ -333,9 +332,50 @@ function autoAssignTo(to){
 
 function filterByTo(val){
   document.querySelectorAll('.to-section[data-to]').forEach(el=>{
-    el.style.display=(!val||el.dataset.to===val)?'':'none';
+    const dt = el.dataset.to;
+    if(!val) {
+      el.style.display='';
+    } else {
+      // == (không ===) để so sánh "1" == 1 an toàn; ẩn unassigned khi lọc tổ
+      el.style.display=(dt==val)?'':'none';
+    }
   });
 }
+
+// ── AUTO-SCROLL KHI KÉO ──────────────────────────────────────
+(function(){
+  let _raf = null;
+  const ZONE = 120; // px từ mép để kích hoạt scroll
+  const MAX_SPEED = 18;
+
+  document.addEventListener('dragover', function(e){
+    const y = e.clientY;
+    const h = window.innerHeight;
+    let speed = 0;
+
+    if (y < ZONE) {
+      speed = -MAX_SPEED * (1 - y / ZONE);
+    } else if (y > h - ZONE) {
+      speed = MAX_SPEED * (1 - (h - y) / ZONE);
+    }
+
+    if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+    if (speed !== 0) {
+      const scroll = () => {
+        window.scrollBy(0, speed);
+        _raf = requestAnimationFrame(scroll);
+      };
+      _raf = requestAnimationFrame(scroll);
+    }
+  });
+
+  document.addEventListener('dragend', function(){
+    if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+  });
+  document.addEventListener('drop', function(){
+    if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+  });
+})();
 
 function searchStudents(q){
   q=q.toLowerCase();
@@ -344,4 +384,5 @@ function searchStudents(q){
     el.style.display=n.includes(q)?'':'none';
   });
 }
+
 </script>

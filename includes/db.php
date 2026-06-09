@@ -38,8 +38,9 @@ class DB {
         self::init();
         $sql = "SELECT * FROM students WHERE 1=1";
         $p = [];
-        if (!empty($f['to']))     { $sql .= " AND `to`=:to";          $p['to']=$f['to']; }
-        if (!empty($f['search'])) { $sql .= " AND name LIKE :s";       $p['s']='%'.$f['search'].'%'; }
+        // FIX: dùng isset thay !empty để to=0 vẫn lọc được
+        if (isset($f['to']) && $f['to'] !== '')  { $sql .= " AND `to`=:to"; $p['to'] = (int)$f['to']; }
+        if (!empty($f['search'])) { $sql .= " AND name LIKE :s"; $p['s'] = '%'.$f['search'].'%'; }
         $sql .= " ORDER BY `to`,hang,vi_tri,id";
         $st = self::$pdo->prepare($sql); $st->execute($p);
         return $st->fetchAll();
@@ -94,11 +95,17 @@ class DB {
 
     public static function assignDesk(int $sid, int $to, int $hang, string $vi_tri): bool {
         self::init();
-        // Clear previous occupant of that seat
-        self::$pdo->prepare("UPDATE students SET hang=NULL,vi_tri=NULL WHERE `to`=:t AND hang=:h AND vi_tri=:v AND id!=:sid")
-            ->execute(['t'=>$to,'h'=>$hang,'v'=>$vi_tri,'sid'=>$sid]);
-        return self::$pdo->prepare("UPDATE students SET `to`=:t,hang=:h,vi_tri=:v WHERE id=:id")
-            ->execute(['t'=>$to,'h'=>$hang,'v'=>$vi_tri,'id'=>$sid]);
+        // hang=0 hoặc âm = reset chỗ ngồi về NULL
+        if ($hang <= 0) {
+            return self::$pdo->prepare("UPDATE students SET hang=NULL, vi_tri=NULL WHERE id=:id")
+                ->execute(['id' => $sid]);
+        }
+        // Xóa học sinh khác đang ngồi đúng chỗ đó (tránh trùng chỗ)
+        self::$pdo->prepare("UPDATE students SET hang=NULL, vi_tri=NULL WHERE `to`=:t AND hang=:h AND vi_tri=:v AND id!=:sid")
+            ->execute(['t'=>$to, 'h'=>$hang, 'v'=>$vi_tri, 'sid'=>$sid]);
+        // Gán chỗ mới cho học sinh
+        return self::$pdo->prepare("UPDATE students SET `to`=:t, hang=:h, vi_tri=:v WHERE id=:id")
+            ->execute(['t'=>$to, 'h'=>$hang, 'v'=>$vi_tri, 'id'=>$sid]);
     }
 
     public static function bulkImport(array $students, string $mode='merge'): int {
