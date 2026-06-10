@@ -16,19 +16,23 @@ $dutyTo   = (($baseTo - 1 + $offset) % $numTo) + 1;
 
 // ── Tự sinh lịch nếu chưa có ────────────────────────────────
 if (empty($schedule)) {
-    // Lọc học sinh tổ này có chỗ ngồi, sắp xếp hàng→vị trí
+    // Lọc học sinh tổ này (bao gồm cả chưa có chỗ ngồi)
     $toSt = array_values(array_filter($students,
-        fn($s) => (int)($s['to']??0) === $dutyTo && (int)($s['hang']??0) >= 1
+        fn($s) => (int)($s['to']??0) === $dutyTo
     ));
-    usort($toSt, fn($a,$b) =>
-        ((int)$a['hang'] <=> (int)$b['hang']) ?: strcmp($a['vi_tri']??'',$b['vi_tri']??'')
-    );
-    $byRow = [];
-    foreach ($toSt as $s) $byRow[(int)$s['hang']][] = $s;
-
-    $early = []; $late = [];
-    foreach ([1,2,3] as $r) foreach ($byRow[$r]??[] as $s) $early[] = $s;
-    foreach ([4,5,6] as $r) foreach ($byRow[$r]??[] as $s) $late[]  = $s;
+    usort($toSt, function($a,$b) {
+        $ha=(int)($a['hang']??0); $hb=(int)($b['hang']??0);
+        if($ha===0&&$hb===0) return strcmp($a['name']??'',$b['name']??'');
+        if($ha===0) return 1; if($hb===0) return -1;
+        return $ha<=>$hb?:strcmp($a['vi_tri']??'',$b['vi_tri']??'');
+    });
+    $early=[]; $late=[];
+    foreach($toSt as $s) {
+        $h=(int)($s['hang']??0);
+        if($h===0){$early[]=$s;$late[]=$s;}
+        elseif($h<=3){$early[]=$s;}
+        else{$late[]=$s;}
+    }
 
     $n = max(1,(int)($rules['duty_per_day']??4));
     for ($d=0; $d<5; $d++) {

@@ -1,8 +1,5 @@
 <?php
-// ============================================================
-// modules/import.php  v2.5 — FIX LỖI TÁCH CỘT TÊN (FILE VNEDU/CƠ SỞ DỮ LIỆU)
-// Tự động nhận diện và gộp cột Tên riêng kể cả khi hàng tiêu đề bị trống/gộp ô
-// ============================================================
+// modules/import.php  v2.1
 $students = DB::getStudents();
 ?>
 <div class="module-import">
@@ -16,15 +13,17 @@ $students = DB::getStudents();
   </div>
 </div>
 
+<!-- Hướng dẫn cột -->
 <div class="card import-guide">
   <p class="card-title">ℹ️ Định dạng Excel được hỗ trợ</p>
   <p class="muted" style="margin-bottom:10px">
-    Tự nhận diện hàng tiêu đề. Hỗ trợ gộp cột <strong>Họ và tên đệm (Cột 1)</strong> + <strong>Tên riêng (Cột 2)</strong> tự động từ file vnEdu/SMAS kể cả khi tiêu đề cột tên bị trống.
+    Tự nhận diện hàng tiêu đề (bỏ qua các hàng trên như tên trường, tên lớp...). Chấp nhận cột họ tên gộp <strong>hoặc</strong> tách thành 2 cột họ đệm + tên.
   </p>
   <div class="col-grid">
     <?php
     $cols=[
-      ['d'=>'Họ và tên','a'=>'ho ten, hoten, name, ten, ho va ten','r'=>true],
+      ['d'=>'Họ và tên','a'=>'ho ten, hoten, name, ten','r'=>true],
+      ['d'=>'Tổ (1-4)',  'a'=>'to, tổ, nhom, group',   'r'=>false],
     ];
     foreach($cols as $col): ?>
       <div class="col-chip <?=$col['r']?'col-req':'col-opt'?>">
@@ -36,6 +35,7 @@ $students = DB::getStudents();
   </div>
 </div>
 
+<!-- Upload -->
 <div class="upload-area" id="uploadArea"
      ondragover="event.preventDefault();this.classList.add('drag-over')"
      ondragleave="this.classList.remove('drag-over')"
@@ -45,11 +45,12 @@ $students = DB::getStudents();
      onkeydown="if(event.key==='Enter')document.getElementById('excelInput').click()">
   <span class="upload-icon" aria-hidden="true">📤</span>
   <p class="upload-text">Kéo thả hoặc nhấn để chọn file</p>
-  <p class="upload-hint">.xlsx · .xls · .csv — tối đa <?=defined('MAX_UPLOAD_MB') ? MAX_UPLOAD_MB : 5?>MB</p>
+  <p class="upload-hint">.xlsx · .xls · .csv — tối đa <?=MAX_UPLOAD_MB?>MB</p>
 </div>
 <input type="file" id="excelInput" accept=".xlsx,.xls,.csv"
        aria-label="Chọn file Excel" onchange="parseFile(this.files[0])" style="display:none"/>
 
+<!-- Mode nhập -->
 <div class="import-options card" id="importOptions" style="display:none">
   <label class="toggle-label">
     <input type="radio" name="importMode" value="merge" checked/> Cập nhật & thêm mới (giữ dữ liệu cũ)
@@ -59,6 +60,7 @@ $students = DB::getStudents();
   </label>
 </div>
 
+<!-- Preview -->
 <div id="previewWrap" style="display:none">
   <div class="preview-header">
     <span id="previewCount" class="preview-count"></span>
@@ -69,12 +71,13 @@ $students = DB::getStudents();
   </div>
   <div class="table-wrap">
     <table class="data-table">
-      <thead><tr><th>#</th><th>Họ tên sau khi gộp</th><th>Trạng thái</th></tr></thead>
+      <thead><tr><th>#</th><th>Họ tên</th><th>Trạng thái</th></tr></thead>
       <tbody id="previewBody"></tbody>
     </table>
   </div>
 </div>
 
+<!-- Danh sách hiện tại -->
 <div class="card" style="margin-top:14px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <p class="card-title">👥 Danh sách hiện tại <span class="tag tag-gray"><?=count($students)?> học sinh</span></p>
@@ -105,41 +108,38 @@ $students = DB::getStudents();
 </div>
 
 <script>
+// Chuẩn hoá chuỗi: bỏ dấu, thường, trim
 function norm(h){
   return(h||'').toString().toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/\s+/g,' ').trim();
 }
 
+// Kiểm tra ô có phải là tiêu đề "Họ và tên" không
 function isNameHeader(val){
   const n=norm(val);
   return ['ho va ten','ho ten','hoten','fullname','name','ten'].some(a=>n.includes(a));
 }
 
-// Tìm vị trí tiêu đề chính xác
+// Kiểm tra ô có phải là tiêu đề "Tên" đơn (cột phụ kế bên) không
+function isSurNameHeader(val){
+  const n=norm(val);
+  return n==='ten'||n==='ho dem'||n==='ho'||n==='last name'||n==='firstname';
+}
+
+// Tìm hàng tiêu đề + chỉ số cột họ tên
+// Trả về { headerRow, nameCol, extraCol }
+// nameCol: cột chứa "Họ và tên" (hoặc họ đệm)
+// extraCol: cột tên đơn liền kề (nếu có), ghép = nameCol + extraCol
 function findHeaderAndNameCols(rows){
   for(let ri=0;ri<Math.min(rows.length,15);ri++){
     const row=rows[ri];
-    if(!row) continue;
     for(let ci=0;ci<row.length;ci++){
       if(isNameHeader(row[ci])){
-        // Thuật toán v2.5: Kiểm tra xem 5 dòng dữ liệu bên dưới của cột kế bên có chứa Tên riêng không
-        let hasDataNextCol = false;
-        let sampleCount = 0;
-        
-        for(let checkRow = ri + 1; checkRow < Math.min(rows.length, ri + 6); checkRow++){
-          if(rows[checkRow] && rows[checkRow][ci+1] !== undefined && String(rows[checkRow][ci+1]).trim() !== '') {
-            sampleCount++;
-            // Nếu độ dài từ ở cột bên cạnh ngắn (thường chỉ 1 từ như "Anh", "Bảo") -> Đích thị là cột Tên riêng tách rời
-            if(String(rows[checkRow][ci+1]).trim().split(' ').length <= 2) {
-              hasDataNextCol = true;
-            }
-          }
-        }
-        
-        // Nếu cột kế bên có dữ liệu tên riêng biệt, đánh dấu gộp cột luôn
-        const extraCol = (hasDataNextCol || sampleCount > 0) ? ci + 1 : null;
-        return { headerRow: ri, nameCol: ci, extraCol };
+        // Kiểm tra cột kế bên có phải "tên đơn" không
+        const nextVal=row[ci+1]??'';
+        const extraCol=isSurNameHeader(nextVal)?ci+1:null;
+        return { headerRow:ri, nameCol:ci, extraCol };
       }
     }
   }
@@ -160,37 +160,29 @@ function parseFile(file){
 
       const found=findHeaderAndNameCols(rows);
       if(!found){
-        alert('Không tìm thấy cột "Họ và tên" trong file Excel.');
+        alert('Không tìm thấy cột "Họ và tên" trong file.\nHãy chắc file có cột tiêu đề chứa "Họ và tên", "Họ tên", hoặc "Name".');
         return;
       }
 
       const { headerRow, nameCol, extraCol } = found;
       parsedRows=[];
 
-      for(let i=headerRow+1; i<rows.length; i++){
+      for(let i=headerRow+1;i<rows.length;i++){
         const r=rows[i];
-        if(!r) continue;
-        
-        // Lấy Họ và tên đệm từ cột chính (Ví dụ: "Dương Ngọc")
+        // Lấy phần họ đệm
         const part1=String(r[nameCol]??'').trim();
-        
-        // Lấy Tên riêng từ cột phụ liền kề (Ví dụ: "Anh")
-        const part2=extraCol!=null?String(r[extraCol]??'').trim(): '';
-        
-        // Bỏ qua dòng số thứ tự trống hoặc dòng tổng kết cuối file của vnEdu
-        if(!part1 || part1 === 'undefined' || isNameHeader(part1)) continue;
-        
-        // Tiến hành ghép đôi hoàn hảo: "Dương Ngọc" + " " + "Anh" = "Dương Ngọc Anh"
-        const fullName = part2 ? (part1 + ' ' + part2) : part1;
-        
+        // Nếu có cột tên riêng, ghép thêm
+        const part2=extraCol!=null?String(r[extraCol]??'').trim():'';
+        // Ghép: "Họ đệm" + " " + "Tên" (hoặc chỉ part1 nếu không có extra)
+        const name=part2?part1+' '+part2:part1;
+        if(!name.trim()) continue;
         parsedRows.push({
-          id: null,
-          name: fullName.replace(/\s+/g,' ').trim(), // Dọn sạch khoảng trắng thừa
-          to: 1,
-          hang: 0,
-          vi_tri: '',
+          name,
+          to: colMap.to !== undefined ? (Math.min(8, Math.max(1, parseInt(r[colMap.to]) || 0)) || null) : null,
+          hang: null,
+          vi_tri: null,
           ban: null,
-          chuc_vu: ''
+          chuc_vu: null,
         });
       }
 
@@ -212,8 +204,8 @@ function showPreview(rows){
   document.getElementById('previewWrap').style.display='';
   document.getElementById('previewCount').textContent=rows.length+' học sinh sẽ được nhập';
   document.getElementById('previewBody').innerHTML=rows.map((r,i)=>`
-    <tr><td>${i+1}</td><td><strong>${r.name}</strong></td>
-    <td><span class="tag tag-blue">Mới (Đã gộp)</span></td></tr>
+    <tr><td>${i+1}</td><td>${r.name}</td>
+    <td><span class="tag tag-blue">Mới</span></td></tr>
   `).join('');
 }
 
@@ -227,24 +219,20 @@ function clearPreview(){
 async function confirmImport(){
   if(!parsedRows.length) return;
   const mode=document.querySelector('input[name=importMode]:checked')?.value||'merge';
-  App.toast('Đang nạp danh sách học sinh...','info');
-  
+  App.toast('Đang nhập...','info');
   const r=await App.importStudents(parsedRows,mode);
-  if(r && r.ok!==false){
-    App.toast('Đã nhập '+r.count+' học sinh hoàn tất! ✓','success');
-    setTimeout(() => { location.reload(); }, 800);
-  } else {
-    App.toast('Lỗi: '+(r?.error||'?'),'error');
-  }
+  if(r.ok!==false){App.toast('Đã nhập '+r.count+' học sinh ✓');location.reload();}
+  else App.toast('Lỗi nhập: '+(r.error||'?'),'error');
 }
 
 async function clearAll(){
   if(!confirm('Xoá TOÀN BỘ danh sách học sinh? Không thể hoàn tác!')) return;
   const r=await App.importStudents([],'replace');
-  if(r && r.ok!==false) location.reload();
+  if(r.ok!==false) location.reload();
 }
 
 function downloadTemplate(){
+  // Tạo file mẫu ngay trên trình duyệt
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet([
     ['Họ và tên'],

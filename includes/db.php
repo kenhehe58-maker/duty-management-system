@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-//   includes/db.php — MySQL PDO layer (Đã fix lỗi NOT NULL khi Import)
+//  includes/db.php — MySQL PDO layer (hoàn chỉnh)
 // ============================================================
 require_once __DIR__ . '/config.php';
 
@@ -38,9 +38,8 @@ class DB {
         self::init();
         $sql = "SELECT * FROM students WHERE 1=1";
         $p = [];
-        // FIX: dùng isset thay !empty để to=0 vẫn lọc được
-        if (isset($f['to']) && $f['to'] !== '')  { $sql .= " AND `to`=:to"; $p['to'] = (int)$f['to']; }
-        if (!empty($f['search'])) { $sql .= " AND name LIKE :s"; $p['s'] = '%'.$f['search'].'%'; }
+        if (!empty($f['to']))     { $sql .= " AND `to`=:to";          $p['to']=$f['to']; }
+        if (!empty($f['search'])) { $sql .= " AND name LIKE :s";       $p['s']='%'.$f['search'].'%'; }
         $sql .= " ORDER BY `to`,hang,vi_tri,id";
         $st = self::$pdo->prepare($sql); $st->execute($p);
         return $st->fetchAll();
@@ -48,45 +47,43 @@ class DB {
 
     public static function upsertStudent(array $s): int {
         self::init();
-        
-        // Xử lý chống lỗi NOT NULL từ MySQL: Nếu trống thì gán giá trị an toàn
-        $hang = (isset($s['hang']) && $s['hang'] !== null && $s['hang'] !== '') ? (int)$s['hang'] : 0;
-        $vi_tri = (isset($s['vi_tri']) && $s['vi_tri'] !== null) ? trim($s['vi_tri']) : '';
-        $ban = isset($s['ban']) ? $s['ban'] : null;
-        $chuc_vu = isset($s['chuc_vu']) ? trim($s['chuc_vu']) : '';
+        // FIX: to=null -> giữ nguyên khi update (merge), dùng 1 khi insert mới
+        $toVal = (isset($s['to']) && $s['to'] !== null && $s['to'] !== '') ? (int)$s['to'] : null;
 
         if (!empty($s['id'])) {
-            $st = self::$pdo->prepare(
-                "INSERT INTO students (id,name,`to`,hang,vi_tri,ban,chuc_vu)
-                 VALUES (:id,:n,:t,:h,:v,:b,:c)
-                 ON DUPLICATE KEY UPDATE name=VALUES(name),`to`=VALUES(`to`),
-                 hang=VALUES(hang),vi_tri=VALUES(vi_tri),ban=VALUES(ban),chuc_vu=VALUES(chuc_vu)"
-            );
-            $st->execute([
-                'id' => $s['id'],
-                'n'  => $s['name'],
-                't'  => $s['to'],
-                'h'  => $hang,
-                'v'  => $vi_tri,
-                'b'  => $ban,
-                'c'  => $chuc_vu
-            ]);
+            if ($toVal !== null) {
+                // Có to mới: update cả to
+                $st = self::$pdo->prepare(
+                    "INSERT INTO students (id,name,`to`,hang,vi_tri,ban,chuc_vu)
+                     VALUES (:id,:n,:t,:h,:v,:b,:c)
+                     ON DUPLICATE KEY UPDATE name=VALUES(name),`to`=VALUES(`to`),
+                     hang=VALUES(hang),vi_tri=VALUES(vi_tri),ban=VALUES(ban),chuc_vu=VALUES(chuc_vu)"
+                );
+                $st->execute(['id'=>$s['id'],'n'=>$s['name'],'t'=>$toVal,
+                    'h'=>$s['hang']??null,'v'=>$s['vi_tri']??null,'b'=>$s['ban']??null,'c'=>$s['chuc_vu']??null]);
+            } else {
+                // to=null: KHÔNG ghi đè to trong DB (giữ giá trị cũ)
+                $st = self::$pdo->prepare(
+                    "INSERT INTO students (id,name,`to`,hang,vi_tri,ban,chuc_vu)
+                     VALUES (:id,:n,1,:h,:v,:b,:c)
+                     ON DUPLICATE KEY UPDATE name=VALUES(name),
+                     hang=VALUES(hang),vi_tri=VALUES(vi_tri),ban=VALUES(ban),chuc_vu=VALUES(chuc_vu)"
+                );
+                $st->execute(['id'=>$s['id'],'n'=>$s['name'],
+                    'h'=>$s['hang']??null,'v'=>$s['vi_tri']??null,'b'=>$s['ban']??null,'c'=>$s['chuc_vu']??null]);
+            }
             return (int)$s['id'];
         } else {
+            // Insert mới: to=null -> default 1
             $st = self::$pdo->prepare(
                 "INSERT INTO students (name,`to`,hang,vi_tri,ban,chuc_vu) VALUES (:n,:t,:h,:v,:b,:c)"
             );
-            $st->execute([
-                'n'  => $s['name'],
-                't'  => $s['to'],
-                'h'  => $hang,
-                'v'  => $vi_tri,
-                'b'  => $ban,
-                'c'  => $chuc_vu
-            ]);
+            $st->execute(['n'=>$s['name'],'t'=>$toVal??1,
+                'h'=>$s['hang']??null,'v'=>$s['vi_tri']??null,'b'=>$s['ban']??null,'c'=>$s['chuc_vu']??null]);
             return (int)self::$pdo->lastInsertId();
         }
     }
+
 
     public static function deleteStudent(int $id): bool {
         self::init();
@@ -95,17 +92,11 @@ class DB {
 
     public static function assignDesk(int $sid, int $to, int $hang, string $vi_tri): bool {
         self::init();
-        // hang=0 hoặc âm = reset chỗ ngồi về NULL
-        if ($hang <= 0) {
-            return self::$pdo->prepare("UPDATE students SET hang=NULL, vi_tri=NULL WHERE id=:id")
-                ->execute(['id' => $sid]);
-        }
-        // Xóa học sinh khác đang ngồi đúng chỗ đó (tránh trùng chỗ)
-        self::$pdo->prepare("UPDATE students SET hang=NULL, vi_tri=NULL WHERE `to`=:t AND hang=:h AND vi_tri=:v AND id!=:sid")
-            ->execute(['t'=>$to, 'h'=>$hang, 'v'=>$vi_tri, 'sid'=>$sid]);
-        // Gán chỗ mới cho học sinh
-        return self::$pdo->prepare("UPDATE students SET `to`=:t, hang=:h, vi_tri=:v WHERE id=:id")
-            ->execute(['t'=>$to, 'h'=>$hang, 'v'=>$vi_tri, 'id'=>$sid]);
+        // Clear previous occupant of that seat
+        self::$pdo->prepare("UPDATE students SET hang=NULL,vi_tri=NULL WHERE `to`=:t AND hang=:h AND vi_tri=:v AND id!=:sid")
+            ->execute(['t'=>$to,'h'=>$hang,'v'=>$vi_tri,'sid'=>$sid]);
+        return self::$pdo->prepare("UPDATE students SET `to`=:t,hang=:h,vi_tri=:v WHERE id=:id")
+            ->execute(['t'=>$to,'h'=>$hang,'v'=>$vi_tri,'id'=>$sid]);
     }
 
     public static function bulkImport(array $students, string $mode='merge'): int {

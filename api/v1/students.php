@@ -1,6 +1,6 @@
 <?php
 // ============================================================
-//  api/v1/students.php — Đã sửa lỗi thiếu break và ép kiểu dữ liệu
+//  api/v1/students.php — Fixed: import giữ to=null đúng
 // ============================================================
 define('APP_ROOT', dirname(dirname(__DIR__)));
 require_once APP_ROOT . '/includes/helpers.php';
@@ -8,7 +8,6 @@ require_once APP_ROOT . '/includes/db.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Hàm bổ trợ phòng trường hợp file helpers.php chưa định nghĩa hàm jsonOut
 if (!function_exists('jsonOut')) {
     function jsonOut($data, $code = 200) {
         http_response_code($code);
@@ -22,13 +21,11 @@ if (!function_exists('sanitize')) {
     }
 }
 
-// GET — danh sách học sinh
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo json_encode(DB::getStudents(), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// POST — các action
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
 $action = $body['action'] ?? '';
 
@@ -44,21 +41,20 @@ switch ($action) {
         $s['chuc_vu'] = isset($s['chuc_vu']) ? sanitize($s['chuc_vu']) : null;
         $newId = DB::upsertStudent($s);
         jsonOut(['ok'=>true, 'id'=>$newId]);
-        break; // FIX: Thêm break chống tràn code
+        break;
 
     case 'delete':
         $id = (int)($body['id'] ?? 0);
         if (!$id) jsonOut(['ok'=>false,'error'=>'ID không hợp lệ'], 422);
         DB::deleteStudent($id);
         jsonOut(['ok'=>true]);
-        break; // FIX: Thêm break
+        break;
 
     case 'assign':
         $sid    = (int)($body['sid']    ?? 0);
         $to     = (int)($body['to']     ?? 0);
-        $hang   = (int)($body['hang']   ?? 0);   // 0 = reset chỗ ngồi
-        $vi_tri = strtoupper(substr($body['vi_tri'] ?? '', 0, 1)); // '' khi reset
-        // FIX: bỏ !$hang — hang=0 hợp lệ khi dùng resetAllDesks()
+        $hang   = (int)($body['hang']   ?? 0);
+        $vi_tri = strtoupper(substr($body['vi_tri'] ?? '', 0, 1));
         if (!$sid || !$to) jsonOut(['ok'=>false,'error'=>'Thiếu thông tin'], 422);
         DB::assignDesk($sid, $to, $hang, $vi_tri);
         jsonOut(['ok'=>true]);
@@ -66,14 +62,14 @@ switch ($action) {
 
     case 'auto_assign':
         $to       = (int)($body['to'] ?? 1);
-        // Lấy toàn bộ rồi filter theo tổ (phòng trường hợp DB::getStudents không hỗ trợ filter)
         $allSt    = DB::getStudents();
-        $students = array_values(array_filter($allSt, fn($s) => (int)($s['to'] ?? 0) === $to));
-        // Xóa chỗ cũ của tổ này trước (tránh trùng chỗ)
+        // FIX: dùng == thay vì === để so sánh int với string từ DB
+        $students = array_values(array_filter($allSt, fn($s) => (int)($s['to'] ?? 0) == $to));
+        // Reset chỗ cũ
         foreach ($students as $s) {
             DB::assignDesk((int)$s['id'], $to, 0, '');
         }
-        // Xếp lại từ đầu: T rồi P, từng hàng
+        // Xếp lại T rồi P từng hàng
         $i = 0;
         foreach ($students as $s) {
             $hang   = (int)floor($i / 2) + 1;
@@ -89,10 +85,14 @@ switch ($action) {
         $mode = in_array($body['mode']??'', ['merge','replace']) ? $body['mode'] : 'merge';
         
         $cleanRows = array_map(function($r) {
+            // FIX: giữ to=null nếu frontend gửi null (không ép về 1)
+            $toVal = $r['to'] ?? null;
+            $toClean = ($toVal !== null && $toVal !== '') ? max(1, min(8, (int)$toVal)) : null;
+            
             return [
                 'id'      => !empty($r['id']) ? (int)$r['id'] : null,
                 'name'    => sanitize($r['name']   ?? ''),
-                'to'      => max(1, min(8, (int)($r['to'] ?? 1))),
+                'to'      => $toClean,
                 'hang'    => !empty($r['hang'])   ? (int)$r['hang']   : null,
                 'vi_tri'  => !empty($r['vi_tri'])  ? strtoupper(substr($r['vi_tri'],0,1)) : null,
                 'ban'     => !empty($r['ban'])     ? (int)$r['ban']   : null,
@@ -102,7 +102,7 @@ switch ($action) {
 
         $count = DB::bulkImport($cleanRows, $mode);
         jsonOut(['ok'=>true, 'count'=>$count]);
-        break; // FIX: Thêm break chống lọt xuống default
+        break;
 
     default:
         jsonOut(['ok'=>false,'error'=>'Unknown action: '.$action], 400);

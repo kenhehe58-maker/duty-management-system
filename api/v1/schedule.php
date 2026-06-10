@@ -29,37 +29,34 @@ function buildWeekSchedule(int $week, array $students, array $rules): array {
     $offset = (($week - $baseWeek) % $numTo + $numTo) % $numTo;
     $dutyTo = (($baseTo - 1 + $offset) % $numTo) + 1;
 
-    // Lọc học sinh thuộc tổ này (Chấp nhận cả những bạn chưa có chỗ ngồi để tự động xếp)
+    // Lọc học sinh thuộc tổ này (bao gồm cả chưa có chỗ ngồi)
     $toStudents = array_values(array_filter($students,
         fn($s) => (int)($s['to'] ?? 0) === $dutyTo
     ));
-    
-    // Sắp xếp học sinh: những người đã có chỗ ngồi xếp trước, chưa có chỗ (hang = 0) xếp sau
+    // Sắp xếp: có hàng trước (theo hàng→vị trí), chưa có hàng xếp sau
     usort($toStudents, function($a, $b) {
-        $hangA = (int)($a['hang'] ?? 0);
-        $hangB = (int)($b['hang'] ?? 0);
-        if ($hangA === 0 && $hangB > 0) return 1;
-        if ($hangA > 0 && $hangB === 0) return -1;
-        return ($hangA <=> $hangB) ?: strcmp($a['vi_tri']??'', $b['vi_tri']??'');
+        $ha = (int)($a['hang'] ?? 0);
+        $hb = (int)($b['hang'] ?? 0);
+        if ($ha === 0 && $hb === 0) return strcmp($a['name']??'', $b['name']??'');
+        if ($ha === 0) return 1;  // chưa có hàng -> xếp sau
+        if ($hb === 0) return -1;
+        return $ha <=> $hb ?: strcmp($a['vi_tri']??'', $b['vi_tri']??'');
     });
 
-    // Phân nhóm theo hàng
-    $byRow = [];
-    foreach ($toStudents as $s) {
-        $byRow[(int)$s['hang']][] = $s;
-    }
-
-    // T2,T3,T4 → hàng 1,2,3 ; T5,T6 → hàng 4,5,6
-    $earlyRows = [1,2,3]; // ngày 0,1,2
-    $lateRows  = [4,5,6]; // ngày 3,4
-
+    // Phân nhóm: hàng 1-3 (sáng T2-T4), hàng 4-6 (T5-T6), chưa có chỗ -> cả 2 nhóm
     $earlyStudents = [];
     $lateStudents  = [];
-    foreach ($earlyRows as $r) {
-        foreach ($byRow[$r] ?? [] as $s) $earlyStudents[] = $s;
-    }
-    foreach ($lateRows as $r) {
-        foreach ($byRow[$r] ?? [] as $s) $lateStudents[] = $s;
+    foreach ($toStudents as $s) {
+        $h = (int)($s['hang'] ?? 0);
+        if ($h === 0) {
+            // Chưa có chỗ: phân đều vào cả 2 nhóm
+            $earlyStudents[] = $s;
+            $lateStudents[]  = $s;
+        } elseif ($h <= 3) {
+            $earlyStudents[] = $s;
+        } else {
+            $lateStudents[]  = $s;
+        }
     }
 
     $n        = max(1, (int)($rules['duty_per_day'] ?? 4));
@@ -135,36 +132,9 @@ switch ($action) {
     case 'regen': {
         $students = DB::getStudents();
         $rules    = DB::getRules();
-        
-        // Thực hiện gán vị trí tự động trực tiếp vào Database cho Tổ được chọn
-        $targetTo = max(1, (int)($body['to'] ?? 1));
-        
-        // Lấy danh sách học sinh thuộc tổ này
-        $toStudents = array_values(array_filter($students, fn($s) => (int)($s['to'] ?? 0) === $targetTo));
-        
-        $currentRow = 1;
-        $currentPos = 'T';
-        $maxRows = (int)($rules['num_rows'] ?? 6);
-        $assignedCount = 0;
-
-        foreach ($toStudents as $student) {
-            if ($currentRow > $maxRows) break; // Hết chỗ ghế trong lớp
-
-            // Gọi hàm lưu vị trí mới vào Database
-            DB::assignDesk($student['id'], $targetTo, $currentRow, $currentPos);
-            $assignedCount++;
-
-            // Xoay vị trí: Trái -> Phải -> Xuống hàng tiếp theo
-            if ($currentPos === 'T') {
-                $currentPos = 'P';
-            } else {
-                $currentPos = 'T';
-                $currentRow++;
-            }
-        }
-
-        jsonOut(['ok' => true, 'count' => $assignedCount]);
-        break;
+        $schedule = buildWeekSchedule($week, $students, $rules);
+        DB::saveSchedule($week, $schedule);
+        jsonOut(['ok'=>true]);
     }
 
     case 'add_extra': {
