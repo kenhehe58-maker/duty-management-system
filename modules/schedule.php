@@ -1,5 +1,5 @@
 <?php
-// modules/schedule.php  v2.1
+// modules/schedule.php  v2.2 — Smart duty rotation
 $rules    = DB::getRules();
 $students = DB::getStudents();
 $week     = max(1,(int)($_GET['week']??date('W')));
@@ -7,16 +7,40 @@ $schedule = DB::getSchedule($week);
 $toColors = json_decode(TO_COLORS,true);
 $days     = dayNames();
 
-if(empty($schedule)) {
-    $toOrder=[1,2,3,4,1];
-    $n=$rules['duty_per_day'];
-    for($d=0;$d<DUTY_DAYS_PER_WEEK;$d++){
-        $to=$toOrder[$d];
-        $ts=array_values(array_filter($students,fn($s)=>$s['to']==$to));
-        $schedule[$d]=['to'=>$to,'students'=>array_slice($ts,0,min($n,count($ts)))];
+// ── Tính tổ trực tuần này ────────────────────────────────────
+$baseWeek = (int)($rules['base_week'] ?? 1);
+$baseTo   = (int)($rules['base_to']   ?? 1);
+$numTo    = 4;
+$offset   = (($week - $baseWeek) % $numTo + $numTo) % $numTo;
+$dutyTo   = (($baseTo - 1 + $offset) % $numTo) + 1;
+
+// ── Tự sinh lịch nếu chưa có ────────────────────────────────
+if (empty($schedule)) {
+    // Lọc học sinh tổ này có chỗ ngồi, sắp xếp hàng→vị trí
+    $toSt = array_values(array_filter($students,
+        fn($s) => (int)($s['to']??0) === $dutyTo && (int)($s['hang']??0) >= 1
+    ));
+    usort($toSt, fn($a,$b) =>
+        ((int)$a['hang'] <=> (int)$b['hang']) ?: strcmp($a['vi_tri']??'',$b['vi_tri']??'')
+    );
+    $byRow = [];
+    foreach ($toSt as $s) $byRow[(int)$s['hang']][] = $s;
+
+    $early = []; $late = [];
+    foreach ([1,2,3] as $r) foreach ($byRow[$r]??[] as $s) $early[] = $s;
+    foreach ([4,5,6] as $r) foreach ($byRow[$r]??[] as $s) $late[]  = $s;
+
+    $n = max(1,(int)($rules['duty_per_day']??4));
+    for ($d=0; $d<5; $d++) {
+        $pool = $d<=2 ? $early : $late;
+        $schedule[$d] = ['to'=>$dutyTo,'students'=>array_slice($pool,0,min($n,count($pool)))];
     }
     DB::saveSchedule($week,$schedule);
 }
+
+// ── Lấy IDs học sinh trực hôm nay (để highlight vòng đỏ) ────
+$dow = max(0,(int)date('N')-1); // 0=T2 … 4=T6
+$dutyTodaySids = array_column($schedule[$dow]['students'] ?? [], 'id');
 ?>
 <div class="module-schedule">
 
@@ -44,28 +68,41 @@ if(empty($schedule)) {
 
 <div class="info-bar">
   <span>⏰ Buổi: <strong><?=DUTY_SESSION?></strong></span>
+  <span>📋 Tuần này: <strong style="color:<?=$toColors[$dutyTo]['text']?>"><?=$toColors[$dutyTo]['label']?> trực</strong></span>
   <span>👥 Mặc định: <strong><?=$rules['duty_per_day']?> người/ngày</strong></span>
-  <span>🔄 Xoay: <strong><?=$rules['rotate_by']==='to'?'Theo tổ':'Thủ công'?></strong></span>
   <?php if($rules['allow_override']): ?><span class="tag tag-green">✓ Cho phép thêm tự do</span><?php endif; ?>
+  <button class="btn-secondary" style="padding:3px 10px;font-size:11px" onclick="openModal('baseModal')"
+          title="Đặt tổ bắt đầu cho tuần này">🔧 Đặt tổ gốc</button>
 </div>
 
 <div class="schedule-grid" id="scheduleGrid">
   <?php foreach($schedule as $di=>$day):
     if(!isset($days[$di])) continue;
-    $c=$toColors[$day['to']]??$toColors[1];
-    $ppl=$day['students']??[];
+    $c   = $toColors[$day['to']]??$toColors[1];
+    $ppl = $day['students']??[];
+    // Ngày hôm nay?
+    $isToday = ($di === $dow && $week === (int)date('W'));
   ?>
-  <div class="day-card" data-week="<?=$week?>" data-day="<?=$di?>">
+  <div class="day-card <?=$isToday?'day-card-today':''?>" data-week="<?=$week?>" data-day="<?=$di?>">
     <div class="day-header" style="border-bottom:2px solid <?=$c['border']?>">
-      <span class="day-name"><?=$days[$di]?></span>
+      <span class="day-name"><?=$days[$di]?><?=$isToday?' <span class="tag tag-green" style="font-size:9px">Hôm nay</span>':''?></span>
       <span class="to-badge" style="background:<?=$c['bg']?>;color:<?=$c['text']?>"><?=$c['label']?></span>
     </div>
     <ul class="duty-list sortable-list" id="dutyList-<?=$di?>" data-week="<?=$week?>" data-day="<?=$di?>">
-      <?php foreach($ppl as $st): ?>
-        <li class="duty-person" data-sid="<?=$st['id']?>">
-          <div class="avatar-sm" style="background:<?=$c['bg']?>;color:<?=$c['text']?>"><?=getInitials($st['name'])?></div>
+      <?php foreach($ppl as $st):
+        // Vòng đỏ = người này đang trực HÔM NAY (đúng ngày trong tuần hiện tại)
+        $isOnDutyNow = $isToday && in_array($st['id'], $dutyTodaySids);
+      ?>
+        <li class="duty-person <?=$isOnDutyNow?'duty-person-active':''?>" data-sid="<?=$st['id']?>">
+          <div class="avatar-sm <?=$isOnDutyNow?'avatar-duty':''?>"
+               style="background:<?=$c['bg']?>;color:<?=$c['text']?>"><?=getInitials($st['name'])?></div>
           <span title="<?=htmlspecialchars($st['name'])?>"><?=htmlspecialchars($st['name'])?></span>
-          <?php if(!empty($st['chuc_vu'])): ?><span class="tag tag-wood" style="font-size:9px"><?=htmlspecialchars($st['chuc_vu'])?></span><?php endif; ?>
+          <?php if(!empty($st['chuc_vu'])): ?>
+            <span class="tag tag-wood" style="font-size:9px"><?=htmlspecialchars($st['chuc_vu'])?></span>
+          <?php endif; ?>
+          <?php if(!empty($st['hang'])): ?>
+            <span class="tag tag-gray" style="font-size:9px">H<?=$st['hang']?><?=$st['vi_tri']??''?></span>
+          <?php endif; ?>
           <button class="btn-icon-xs" onclick="doRemove(<?=$week?>,<?=$di?>,<?=$st['id']?>)"
                   aria-label="Xoá <?=htmlspecialchars($st['name'])?> khỏi ca trực" title="Xoá">✕</button>
         </li>
@@ -167,8 +204,36 @@ if(empty($schedule)) {
   </div>
 </div>
 
+<!-- Modal đặt tổ gốc -->
+<div id="baseModal" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="baseTitle">
+  <div class="popup-box">
+    <div class="popup-header">
+      <span id="baseTitle">🔧 Đặt tổ gốc xoay vòng</span>
+      <button onclick="closeModal('baseModal')" aria-label="Đóng">✕</button>
+    </div>
+    <div class="popup-body">
+      <p class="muted" style="margin-bottom:10px">
+        Hệ thống sẽ tính tổ trực cho mọi tuần dựa trên mốc này.<br>
+        <strong>Tuần <?=$week?></strong> đang tính là <strong><?=$toColors[$dutyTo]['label']?></strong> trực.
+      </p>
+      <label class="field-label" for="baseToSelect">Tuần <?=$week?> (hiện tại) là tổ nào trực?</label>
+      <select id="baseToSelect" class="field-select" title="Chọn tổ gốc">
+        <?php for($t=1;$t<=4;$t++): ?>
+          <option value="<?=$t?>" <?=$dutyTo===$t?'selected':''?>><?=$toColors[$t]['label']?></option>
+        <?php endfor; ?>
+      </select>
+      <p class="muted" style="margin-top:8px;font-size:11px">
+        Sau khi lưu, nhấn "Tạo lại" để áp dụng cho tuần này.
+      </p>
+    </div>
+    <div class="popup-footer">
+      <button class="btn-secondary" onclick="closeModal('baseModal')">Hủy</button>
+      <button class="btn-primary" onclick="doSetBase()">💾 Lưu mốc</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// Sortable
 document.querySelectorAll('.sortable-list').forEach(list => {
   if(typeof Sortable==='undefined') return;
   Sortable.create(list, { animation:150, handle:'.duty-person',
@@ -217,8 +282,18 @@ function doSaveRules() {
 }
 
 function doRegen(w) {
-  if(!confirm('Tạo lại lịch tuần này?')) return;
+  if(!confirm('Tạo lại lịch tuần này theo quy tắc tự động?')) return;
   App.regenerateWeek(w).then(r=>{ if(r.ok!==false) location.reload(); });
+}
+
+function doSetBase() {
+  const baseTo = +document.getElementById('baseToSelect').value;
+  App.post('api/v1/schedule.php', { action:'set_base', week:<?=$week?>, base_to:baseTo })
+    .then(r=>{
+      closeModal('baseModal');
+      if(r.ok!==false){ App.toast('Đã lưu mốc ✓'); }
+      else App.toast('Lỗi: '+(r.error||'?'),'error');
+    });
 }
 
 function doAddExtra(w) {
@@ -233,3 +308,21 @@ function doRemoveExtra(w,idx) {
   App.removeExtraDay(w,idx).then(r=>{ if(r.ok!==false) location.reload(); });
 }
 </script>
+
+<style>
+/* Vòng đỏ học sinh đang trực hôm nay */
+.avatar-duty {
+  outline: 2.5px solid var(--red);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(192,57,43,.15);
+}
+.duty-person-active {
+  background: var(--red-bg) !important;
+  border-color: var(--red) !important;
+}
+/* Highlight card ngày hôm nay */
+.day-card-today {
+  border: 2px solid var(--board) !important;
+  box-shadow: 0 0 0 3px rgba(44,122,44,.15), var(--sh-md) !important;
+}
+</style>

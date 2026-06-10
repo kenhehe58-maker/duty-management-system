@@ -1,10 +1,13 @@
 <?php
-// modules/diagram.php — Sơ đồ lớp (v2.1 fixed)
+// modules/diagram.php — v2.2: isDutySlot dựa vào lịch thực tế
 $students  = DB::getStudents();
 $toColors  = json_decode(TO_COLORS, true);
 $sched     = DB::getSchedule((int)date('W'));
 $dow       = max(0, (int)date('N') - 1);
 $dutyToday = $sched[$dow] ?? [];
+
+// IDs học sinh trực HÔM NAY (từ lịch thực tế, không hardcode hàng)
+$dutyTodaySids = array_column($dutyToday['students'] ?? [], 'id');
 
 function findStudent(array $a, int $to, int $row, string $pos): ?array {
     foreach ($a as $s) {
@@ -12,44 +15,34 @@ function findStudent(array $a, int $to, int $row, string $pos): ?array {
     }
     return null;
 }
-function isDutySlot(array $duty, int $to, int $row): bool {
-    if (empty($duty['to'])) return false;
-    return $duty['to']==$to && $row<=2;
+
+// isDutySlot: true nếu học sinh ngồi ở bàn đó đang có trong danh sách trực hôm nay
+function isDutySlot(?array $st, array $dutyTodaySids): bool {
+    if (!$st || empty($dutyTodaySids)) return false;
+    return in_array($st['id'], $dutyTodaySids);
 }
 
-/**
- * Hàm hỗ trợ tự động xử lý lấy Tên Cuối, kèm Tên Đệm nếu bị trùng tên cuối trong lớp
- */
 function getSmartName(array $st, array $allStudents): string {
     $parts = explode(' ', trim($st['name']));
-    $mainName = end($parts); // Lấy từ cuối cùng (Tên chính)
-
-    // Đếm xem trong toàn bộ danh sách lớp có bao nhiêu bạn trùng tên chính này
+    $mainName = end($parts);
     $dupCount = 0;
     foreach ($allStudents as $s) {
         $p = explode(' ', trim($s['name']));
-        if (end($p) === $mainName) {
-            $dupCount++;
-        }
+        if (end($p) === $mainName) $dupCount++;
     }
-
-    // Nếu trùng tên và có từ 2 từ trở lên, lấy thêm từ đệm ngay trước tên chính
     if ($dupCount > 1 && count($parts) > 1) {
-        $middleName = $parts[count($parts) - 2];
-        return $middleName . ' ' . $mainName;
+        return $parts[count($parts) - 2] . ' ' . $mainName;
     }
-
     return $mainName;
 }
 
 function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $duty, array $allStudents): string {
-    $id   = "desk-t{$to}-r{$row}-{$pos}";
-    $sid  = $st['id'] ?? 0;
-    $tip  = $st ? "{$st['name']} · Tổ {$to} H{$row}{$pos}" : "Tổ {$to} H{$row}{$pos} (trống)";
-    $dc   = $duty ? ' desk-duty' : '';
+    $id  = "desk-t{$to}-r{$row}-{$pos}";
+    $sid = $st['id'] ?? 0;
+    $tip = $st ? "{$st['name']} · Tổ {$to} H{$row}{$pos}" : "Tổ {$to} H{$row}{$pos} (trống)";
+    $dc  = $duty ? ' desk-duty' : '';
 
     if ($st) {
-        // Có học sinh: Giữ nguyên chức năng đổi chỗ cho học sinh cũ qua kéo thả
         $displayName = getSmartName($st, $allStudents);
         return "<div id=\"{$id}\" class=\"desk{$dc}\""
           ." style=\"background:{$c['bg']};border-color:{$c['border']};color:{$c['text']}\""
@@ -60,12 +53,10 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
           ."<span class=\"desk-tip\">{$tip}</span>"
           ."</div>";
     } else {
-        // Ô Trống: Khóa hoàn toàn, không click, không cho drop kéo thả người mới vào để bảo vệ độc quyền tab Phân công
         return "<div id=\"{$id}\" class=\"desk{$dc}\""
-          ." style=\"background:{$c['bg']};border-color:{$c['border']};color:var(--text-muted, #7a5c30); cursor:default;\""
+          ." style=\"background:{$c['bg']};border-color:{$c['border']};color:var(--text-muted);cursor:default\""
           ." data-to=\"{$to}\" data-row=\"{$row}\" data-pos=\"{$pos}\" data-sid=\"0\""
-          ." title=\"{$tip}\" aria-label=\"{$tip}\">"
-          ."Trống"
+          ." title=\"{$tip}\" aria-label=\"{$tip}\">Trống"
           ."<span class=\"desk-tip\">{$tip}</span>"
           ."</div>";
     }
@@ -85,8 +76,20 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
   </div>
 </div>
 
-<div class="diagram-wrap">
+<?php if(!empty($dutyTodaySids)): ?>
+<div class="duty-today-banner">
+  <span>📋 Trực hôm nay (<?=date('d/m')?>):</span>
+  <?php foreach($dutyToday['students']??[] as $st):
+    $c2=$toColors[$st['to']]??$toColors[1]; ?>
+    <span class="duty-name-chip" style="background:<?=$c2['bg']?>;color:<?=$c2['text']?>;border-color:<?=$c2['border']?>">
+      <?=htmlspecialchars($st['name'])?>
+      <?php if(!empty($st['hang'])): ?><small>H<?=$st['hang']?><?=$st['vi_tri']??''?></small><?php endif; ?>
+    </span>
+  <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
+<div class="diagram-wrap">
   <div class="diagram-left">
     <div class="blackboard">✏️ BẢNG ĐEN</div>
 
@@ -94,9 +97,11 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
       <div class="teacher-box">
         <span>🪑 Bàn giáo viên</span>
         <small>Góc trái · cùng tường với bảng</small>
+        <small class="podium-slogan">"Một ngày không học là một ngày mất đi."</small>
       </div>
       <div class="podium-box">
         <span class="podium-label">🎤 Bục giảng</span>
+        <span class="podium-note">"Tri thức là hành trang không ai lấy được của bạn."</span>
       </div>
     </div>
 
@@ -118,13 +123,15 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
         <div class="desk-row" data-row="<?=$row?>">
           <div class="row-num">H<?=$row?></div>
           <?php for($to=NUM_TO;$to>=1;$to--):
-            $c=$toColors[$to];
-            $stT=findStudent($students,$to,$row,'T');
-            $stP=findStudent($students,$to,$row,'P');
-            $isDuty=isDutySlot($dutyToday,$to,$row);
+            $c   = $toColors[$to];
+            $stT = findStudent($students,$to,$row,'T');
+            $stP = findStudent($students,$to,$row,'P');
+            // isDutySlot dựa vào ID học sinh, không hardcode hàng
+            $isDutyT = isDutySlot($stT, $dutyTodaySids);
+            $isDutyP = isDutySlot($stP, $dutyTodaySids);
           ?>
-            <?=renderDesk($stT,$to,$row,'T',$c,$isDuty,$students)?>
-            <?=renderDesk($stP,$to,$row,'P',$c,$isDuty,$students)?>
+            <?=renderDesk($stT,$to,$row,'T',$c,$isDutyT,$students)?>
+            <?=renderDesk($stP,$to,$row,'P',$c,$isDutyP,$students)?>
             <?php if($to>1): ?>
               <div class="path-line path-<?=$to-1?>" aria-label="Đường đi <?=$to-1?>"></div>
             <?php endif; ?>
@@ -140,10 +147,10 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
       <div class="path-legend-item"><span class="duty-box-icon"></span>Đang trực nhật</div>
     </div>
   </div>
-
 </div>
 </div>
 
+<!-- Popup gán chỗ ngồi -->
 <div id="deskPopup" class="popup hidden" role="dialog" aria-modal="true" aria-labelledby="popupTitle">
   <div class="popup-box">
     <div class="popup-header">
@@ -161,7 +168,6 @@ function renderDesk(?array $st, int $to, int $row, string $pos, array $c, bool $
 <script>
 const _allStudents = <?=json_encode($students, JSON_UNESCAPED_UNICODE)?>;
 
-// Drag & drop chỉ gán sự kiện cho những ô bàn đang có học sinh thực tế (có attribute draggable="true")
 document.querySelectorAll('.desk[draggable="true"]').forEach(el => {
   el.addEventListener('dragstart', e => {
     e.dataTransfer.setData('sid', el.dataset.sid);
@@ -184,9 +190,7 @@ document.querySelectorAll('.desk[draggable="true"]').forEach(el => {
 function openDeskPopup(to, row, pos) {
   const desk = document.getElementById(`desk-t${to}-r${row}-${pos}`);
   const sid  = desk?.dataset.sid || '';
-  // Nếu là ô trống (sid == 0), chặn luôn không cho chạy popup hoặc làm gì thêm
   if (!sid || sid == '0') return;
-
   document.getElementById('popupTitle').textContent = `Tổ ${to} · Hàng ${row} · ${pos==='T'?'Trái':'Phải'}`;
   document.getElementById('popupBody').innerHTML = `
     <label class="field-label" for="popupSelect">Học sinh tại vị trí này</label>
@@ -214,3 +218,34 @@ function saveDeskAssign() {
   });
 }
 </script>
+
+<style>
+/* Banner danh sách trực hôm nay */
+.duty-today-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--red-bg);
+  border: 1.5px solid var(--red);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--red);
+}
+.duty-name-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1.5px solid;
+}
+.duty-name-chip small {
+  opacity: .75;
+  font-size: 9px;
+}
+</style>
