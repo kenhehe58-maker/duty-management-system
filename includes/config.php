@@ -1,11 +1,11 @@
 <?php
 // ============================================================
-//  includes/config.php
+//   includes/config.php — Cấu hình đã cập nhật cho InfinityFree
 // ============================================================
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'quanly_trucnhat');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', 'sql200.byetcluster.com'); // Host lấy từ MySQL Databases của ông
+define('DB_NAME', 'if0_42140390_quanly_trucnhat'); // Tên DB đầy đủ trên hosting
+define('DB_USER', 'if0_42140390'); // Username hosting cấp
+define('DB_PASS', 'Donhatnam2202'); // Mật khẩu vPanel/MySQL của ông
 
 define('DUTY_DAYS_PER_WEEK',  5);
 define('DUTY_SESSION',        'Buổi sáng');
