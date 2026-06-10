@@ -2,8 +2,8 @@
 // ============================================================
 //   includes/config.php — Cấu hình đã cập nhật cho InfinityFree
 // ============================================================
-define('DB_HOST', 'sql200.byetcluster.com'); // Host lấy từ MySQL Databases của ông
-define('DB_NAME', 'if0_42140390_quanly_trucnhat'); // Tên DB đầy đủ trên hosting
+define('DB_HOST', 'sql200.infinityfree.com'); // Host lấy từ MySQL Databases của ông
+define('DB_NAME', 'if0_42140390_if0_42140390'); // Tên DB đầy đủ trên hosting
 define('DB_USER', 'if0_42140390'); // Username hosting cấp
 define('DB_PASS', 'Donhatnam2202'); // Mật khẩu vPanel/MySQL của ông
 
